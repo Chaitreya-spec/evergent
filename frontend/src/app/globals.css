@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+/*
+ * One dark theme. Near-black surfaces in a few close steps, hairline borders,
+ * and colour reserved for meaning: one accent for selection and primary
+ * actions, and the four status hues.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0c0e;
+  --panel: #0f1113;
+  --panel-2: #14161a;
+  --panel-3: #1a1d22;
+  --line: #22252b;
+  --line-strong: #30343b;
+
+  --fg: #e7e9ec;
+  --fg-muted: #a0a6b0;
+  --fg-subtle: #6d737d;
+
+  --accent: #8d97ff;
+  --accent-strong: #a3abff;
+  --accent-fg: #0b0c0e;
+  --accent-soft: rgba(141, 151, 255, 0.12);
+
+  --ok: #45c98a;
+  --ok-soft: rgba(69, 201, 138, 0.12);
+  --active: #5ab0ff;
+  --active-soft: rgba(90, 176, 255, 0.12);
+  --warn: #e9b44c;
+  --warn-soft: rgba(233, 180, 76, 0.12);
+  --bad: #f07070;
+  --bad-soft: rgba(240, 112, 112, 0.12);
+  --idle: #7b818b;
+  --idle-soft: rgba(123, 129, 139, 0.12);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-3: var(--panel-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-active: var(--active);
+  --color-active-soft: var(--active-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-idle: var(--idle);
+  --color-idle-soft: var(--idle-soft);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
+  body {
+    font-feature-settings: "cv11", "ss01";
+  }
+  * {
+    border-color: var(--line);
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* Thin, quiet scrollbars that match the panels. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* React Flow, restyled to the theme. */
+.react-flow {
+  --xy-background-color: var(--bg);
+  --xy-edge-stroke: var(--line-strong);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-handle-background-color: var(--line-strong);
+  --xy-handle-border-color: var(--panel);
+  --xy-controls-button-background-color: var(--panel-2);
+  --xy-controls-button-background-color-hover: var(--panel-3);
+  --xy-controls-button-color: var(--fg-muted);
+  --xy-controls-button-color-hover: var(--fg);
+  --xy-controls-button-border-color: var(--line);
+  --xy-minimap-background-color: var(--panel);
+  --xy-minimap-mask-background-color: rgba(11, 12, 14, 0.7);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__controls {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.react-flow__minimap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__edge.dimmed,
+.react-flow__node.dimmed {
+  opacity: 0.22;
+}

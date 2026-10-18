@@ -1,0 +1,32 @@
+# Web
+fastapi
+uvicorn[standard]
+python-multipart
+# Data / validation
+pydantic[email]
+pydantic-settings
+# Database
+sqlalchemy[asyncio]
+pgvector
+alembic
+asyncpg
+aiosqlite
+# Cache / queue
+redis
+celery
+# Security — bcrypt used directly; passlib is avoided because passlib 1.7.4
+# reads bcrypt.__about__, which bcrypt >= 4.1 removed.
+pyjwt
+bcrypt
+cryptography
+# AI providers
+anthropic
+openai
+google-genai
+# Object storage (S3-compatible) for attachments
+boto3
+# Utilities
+httpx
+structlog
+tenacity
+psycopg[binary]

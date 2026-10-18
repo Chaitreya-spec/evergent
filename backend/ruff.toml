@@ -1,0 +1,15 @@
+line-length = 90
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI's Depends() in defaults is the documented pattern
+    "RUF012", # class-level mutable defaults are fine for tool schemas
+]
+
+[lint.per-file-ignores]
+# Tests import application modules after setting the environment, which must
+# happen before any settings are read.
+"tests/conftest.py" = ["E402"]

@@ -1,0 +1,177 @@
+# The whole application, production-style.
+#
+#   cp .env.example .env      # fill in the REQUIRED values
+#   docker compose up -d --build
+#   open http://localhost:3000
+#
+# Only the frontend is published, and only on 127.0.0.1. Postgres, Redis, the
+# API and the worker are reachable inside this network alone. To serve it on
+# a domain with HTTPS, start the bundled reverse proxy as well:
+#
+#   docker compose --profile tls up -d
+#
+# See infrastructure/deployment/DEPLOYMENT.md.
+
+name: evergent
+
+x-backend-env: &backend-env
+  ENVIRONMENT: production
+  DATABASE_URL: postgresql+asyncpg://evergent:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/evergent
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  # Workflows run in the worker, so restarting the API drops no work.
+  EXECUTION_BACKEND: celery
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+  FRONTEND_URL: ${PUBLIC_URL:-http://localhost:3000}
+  CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:3000}
+  # The API is not published: anything that reaches it is the frontend (or
+  # the proxy), on this private network, so its X-Forwarded-For is believed.
+  TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-600}
+  AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-20}
+  MAX_WORKFLOW_COST_USD: ${MAX_WORKFLOW_COST_USD:-5.0}
+  MAX_DAILY_COST_USD: ${MAX_DAILY_COST_USD:-20.0}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  COMPATIBLE_BASE_URL: ${COMPATIBLE_BASE_URL:-}
+  COMPATIBLE_API_KEY: ${COMPATIBLE_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-Evergent <no-reply@localhost>}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+  STORAGE_LOCAL_ROOT: /data/storage
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_REGION: ${S3_REGION:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_SERVER_SIDE_ENCRYPTION: ${S3_SERVER_SIDE_ENCRYPTION-AES256}
+  # Executing generated tests needs a container runtime. Giving this
+  # container the host's Docker socket would hand untrusted code root on the
+  # host, so it is not done: tests are reported as "not run". See
+  # DEPLOYMENT.md, "Running generated tests", for a safe way to enable them.
+  SANDBOX_ENABLED: "false"
+
+x-backend: &backend
+  build: ./backend
+  image: evergent-backend:${IMAGE_TAG:-latest}
+  restart: unless-stopped
+  environment: *backend-env
+  volumes:
+    - storage:/data/storage
+  networks: [internal]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evergent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: evergent
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evergent -d evergent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Runs once per deploy, before the API and worker start, so several API
+  # replicas never race each other to migrate.
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: sh -c "alembic upgrade head && python -m scripts.seed"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    # Client addresses come from X-Forwarded-For via TRUSTED_PROXIES (app/core/net.py),
+    # so uvicorn's own proxy-header handling stays at its loopback-only default.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    expose: ["8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    <<: *backend
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 | grep -q pong"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    image: evergent-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      EVERGENT_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=10001,gid=10001
+    depends_on:
+      api: { condition: service_healthy }
+
+  # HTTPS on a public domain. Certificates are obtained automatically.
+  proxy:
+    image: caddy:2
+    profiles: ["tls"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/deployment/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on:
+      - frontend
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage:
+  caddy_data:
+  caddy_config:

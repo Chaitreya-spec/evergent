@@ -1,0 +1,11 @@
+# Test and lint tools, on top of the runtime requirements. Not installed in
+# the production image.
+-r requirements.txt
+coverage==7.16.2
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+ruff==0.16.10

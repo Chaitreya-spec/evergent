@@ -1,0 +1,17 @@
+# HTTPS in front of the frontend. Caddy obtains and renews the certificate
+# for $DOMAIN automatically (ports 80 and 443 must reach this host).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The live event stream must not be buffered.
+	@stream path_regexp stream ^/api/v1/workflows/[^/]+/stream$
+	reverse_proxy @stream frontend:3000 {
+		flush_interval -1
+	}
+
+	reverse_proxy frontend:3000
+
+	header {
+		-Server
+	}
+}
