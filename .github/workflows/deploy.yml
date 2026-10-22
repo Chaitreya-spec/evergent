@@ -1,0 +1,77 @@
+name: Deploy
+
+# Manual on purpose: a deploy runs migrations and restarts the stack, so it
+# should be a decision rather than a side effect of merging. To deploy every
+# green build of main instead, add:
+#   workflow_run:
+#     workflows: [CI]
+#     types: [completed]
+#     branches: [main]
+# and gate the job on `github.event.workflow_run.conclusion == 'success'`.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit SHA to deploy
+        required: true
+        default: main
+      skip_backup:
+        description: Skip the pre-deploy backup (only for a release with no migration)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Two deploys at once would race on migrations and the compose project.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment in repository settings to
+    # make a deploy need approval.
+    environment: production
+    steps:
+      - name: Open an SSH connection
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinning the host key matters more than usual here: this connection
+          # can restart the production stack.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run the deploy
+        env:
+          # Only the ref travels to the host, and it is not a secret. Secrets
+          # are deliberately not passed as arguments, where they would show up
+          # in the remote process list; the host holds its own GHCR login.
+          REF: ${{ inputs.ref }}
+          SKIP_BACKUP: ${{ inputs.skip_backup && '1' || '0' }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '${DEPLOY_PATH}' && SKIP_BACKUP='${SKIP_BACKUP}' infrastructure/docker/deploy.sh '${REF}'"
+
+      - name: Report
+        if: always()
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          if [ "${{ job.status }}" = success ]; then
+            echo "Deployed \`${{ inputs.ref }}\` to ${DEPLOY_URL:-production}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Deploy of \`${{ inputs.ref }}\` failed; deploy.sh rolls the images back automatically." >> "$GITHUB_STEP_SUMMARY"
+            echo "If the release migrated the database, check the schema before retrying." >> "$GITHUB_STEP_SUMMARY"
+          fi

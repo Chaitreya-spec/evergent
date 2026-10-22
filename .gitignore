@@ -36,3 +36,6 @@ backups/
 # Local logs
 logs/
 *.log
+
+# Deploy state written by infrastructure/docker/deploy.sh on the host
+.deployed-tag

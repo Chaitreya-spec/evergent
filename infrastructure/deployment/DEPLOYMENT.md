@@ -128,6 +128,64 @@ Workflows running during a restart are not lost or silently re-run: the API
 notices their heartbeat stopped and marks them **paused** ("interrupted"), with
 in-flight tasks put back in the queue. Resume them from the UI.
 
+### Scripted deploys
+
+`infrastructure/docker/deploy.sh <sha>` does the update sequence above in one
+step: back up, check out the commit, pull its images, restart, wait for every
+container to report healthy, then confirm `PUBLIC_URL/api/health` answers. If
+the new version does not come up it puts the previous images back.
+
+```bash
+infrastructure/docker/deploy.sh main        # or a specific sha
+```
+
+It refuses to run if the working tree is dirty, so a fix applied on the host
+during an incident is never silently overwritten. Rollback covers images only
+— see the warning above about migrations.
+
+### Deploys from GitHub Actions
+
+The **Deploy** workflow runs that script over SSH. It is manual
+(Actions → Deploy → Run workflow), because a deploy migrates the database and
+restarts the stack.
+
+One-time setup on the host, as the user that owns the checkout:
+
+```bash
+# 1. A key for CI to log in with. Keep the private half out of the host.
+ssh-keygen -t ed25519 -f ~/.ssh/evergent-deploy -C github-actions -N ''
+cat ~/.ssh/evergent-deploy.pub >> ~/.ssh/authorized_keys
+
+# 2. A read-only GHCR login, so deploys need no registry token from CI.
+#    Use a PAT with read:packages only. Skip if you made the packages public.
+echo <PAT> | docker login ghcr.io -u <username> --password-stdin
+
+# 3. The host key CI will pin, and the private key to paste into GitHub.
+ssh-keyscan -t ed25519 <host> 2>/dev/null
+cat ~/.ssh/evergent-deploy
+```
+
+Then add these repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | The host's address |
+| `DEPLOY_USER` | The user that owns the checkout |
+| `DEPLOY_SSH_KEY` | The private key from step 3 |
+| `DEPLOY_KNOWN_HOSTS` | The `ssh-keyscan` line from step 3 |
+| `DEPLOY_PATH` | Absolute path of the checkout, e.g. `/srv/evergent` |
+
+Optionally set the `DEPLOY_URL` *variable* to your public URL, so a successful
+run links to it in the job summary.
+
+The host key is pinned rather than trusted on first use: this connection can
+restart production, so an unverified host key is not an acceptable risk. No
+secret is passed as an argument to the remote command, where it would appear
+in the host's process list.
+
+Add required reviewers to the `production` environment to make deploys need an
+approval before they run.
+
 ## 6. Running generated tests
 
 Testing agents write tests; executing them needs a container runtime. The

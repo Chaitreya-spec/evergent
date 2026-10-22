@@ -164,7 +164,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}-backend
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=long
+            type=sha,format=long,prefix=
       - name: Backend image
         uses: docker/build-push-action@v6
         with:
@@ -181,7 +181,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}-frontend
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=long
+            type=sha,format=long,prefix=
       - name: Frontend image
         uses: docker/build-push-action@v6
         with:
