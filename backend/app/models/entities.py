@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -537,3 +538,17 @@ class Attachment(UUIDMixin, TimestampMixin, Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
     storage_key: Mapped[str] = mapped_column(String(300), unique=True)
+
+
+class StoredObject(TimestampMixin, Base):
+    """The bytes behind a storage key, for STORAGE_BACKEND=database.
+
+    Kept apart from Attachment, like a file on disk or an object in a bucket,
+    so the storage backends stay interchangeable.
+    """
+
+    __tablename__ = "stored_objects"
+
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(100))
+    data: Mapped[bytes] = mapped_column(LargeBinary)

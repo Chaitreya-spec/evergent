@@ -20,6 +20,27 @@ export const API_URL = (process.env.EVERGENT_API_URL ?? "http://localhost:8000")
 export const ACCESS_COOKIE = "evg_at";
 export const REFRESH_COOKIE = "evg_rt";
 
+// Set when this app runs apart from the backend (on Vercel, say). Its outbound
+// address then changes from request to request, so the backend cannot list it
+// in TRUSTED_PROXIES; this shared secret vouches for it instead. It must equal
+// the backend's FRONTEND_PROXY_SECRET.
+const PROXY_SECRET = process.env.FRONTEND_PROXY_SECRET;
+
+/**
+ * Who the browser is, for the backend's per-client rate limits and security
+ * log. Without it every browser would share the one bucket of this server's
+ * address — and the strict sign-in limit with it.
+ */
+export function clientHeaders(request: NextRequest): Record<string, string> {
+  const client = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
+  if (!client) return {};
+  // X-Forwarded-For serves a backend that trusts this server's address; the
+  // secret-backed pair serves one that cannot, and that no proxy rewrites.
+  return PROXY_SECRET
+    ? { "x-forwarded-for": client, "x-evergent-proxy-secret": PROXY_SECRET, "x-evergent-client-ip": client }
+    : { "x-forwarded-for": client };
+}
+
 export type TokenPair = {
   access_token: string;
   refresh_token: string;

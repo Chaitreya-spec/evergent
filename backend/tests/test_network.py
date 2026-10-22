@@ -1,4 +1,5 @@
-"""Client addresses behind proxies, and refusing unsafe production settings."""
+"""Client addresses behind proxies, refusing unsafe production settings, and
+reading the database URLs hosting platforms hand out."""
 
 from __future__ import annotations
 
@@ -37,6 +38,40 @@ class TestClientIp:
         assert net.client_ip(_request("10.0.0.5")) == "10.0.0.5"
 
 
+SECRET = "s" * 44
+
+
+def _via_frontend(secret: str, client: str, peer: str = "198.51.100.20") -> Request:
+    """A request as a frontend hosted elsewhere sends it: from an address no
+    TRUSTED_PROXIES entry covers, vouched for by the shared secret."""
+    headers = [(b"x-evergent-proxy-secret", secret.encode()), (b"x-evergent-client-ip", client.encode())]
+    return Request({"type": "http", "client": (peer, 1234), "headers": headers})
+
+
+@pytest.fixture
+def proxy_secret(monkeypatch):
+    monkeypatch.setattr(settings, "frontend_proxy_secret", SECRET)
+
+
+class TestFrontendProxySecret:
+    def test_the_frontend_reports_the_client(self, proxy_secret) -> None:
+        assert net.client_ip(_via_frontend(SECRET, "203.0.113.9")) == "203.0.113.9"
+
+    def test_a_wrong_secret_is_ignored(self, proxy_secret) -> None:
+        assert net.client_ip(_via_frontend("x" * 44, "203.0.113.9")) == "198.51.100.20"
+
+    def test_without_a_configured_secret_the_headers_mean_nothing(self, monkeypatch) -> None:
+        """Otherwise any client could pick its own address by sending an empty secret."""
+        monkeypatch.setattr(settings, "frontend_proxy_secret", None)
+        assert net.client_ip(_via_frontend("", "203.0.113.9")) == "198.51.100.20"
+
+    def test_a_vouched_for_request_without_an_address_falls_back_to_the_peer(self, proxy_secret) -> None:
+        assert net.client_ip(_via_frontend(SECRET, "not-an-address")) == "198.51.100.20"
+
+    def test_ipv6_clients_are_reported(self, proxy_secret) -> None:
+        assert net.client_ip(_via_frontend(SECRET, "2001:db8::7")) == "2001:db8::7"
+
+
 class TestProductionSettings:
     def test_development_defaults_are_refused(self) -> None:
         with pytest.raises(ValidationError, match="SECRET_KEY") as caught:
@@ -60,3 +95,38 @@ class TestProductionSettings:
         configured = Settings(_env_file=None)
         assert configured.trusted_proxies == ["10.0.0.0/8", "172.16.0.0/12"]
         assert configured.cors_origins == ["https://a.example", "https://b.example"]
+
+    def test_a_short_proxy_secret_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="FRONTEND_PROXY_SECRET"):
+            Settings(
+                environment="production",
+                secret_key="x" * 48,
+                encryption_key="k" * 44,
+                frontend_proxy_secret="guessable",
+                _env_file=None,
+            )
+
+    def test_an_empty_proxy_secret_means_none_is_set(self) -> None:
+        configured = Settings(
+            environment="production",
+            secret_key="x" * 48,
+            encryption_key="k" * 44,
+            frontend_proxy_secret="",
+            _env_file=None,
+        )
+        assert configured.is_production
+
+
+class TestDatabaseUrl:
+    @pytest.mark.parametrize("scheme", ["postgres://", "postgresql://"])
+    def test_platform_urls_get_the_async_driver(self, scheme: str) -> None:
+        """Render, Railway, Heroku and Neon hand out URLs without a driver."""
+        configured = Settings(database_url=f"{scheme}u:p@db.internal/evergent", _env_file=None)
+        assert configured.database_url == "postgresql+asyncpg://u:p@db.internal/evergent"
+        assert configured.sync_database_url == "postgresql://u:p@db.internal/evergent"
+
+    @pytest.mark.parametrize(
+        "url", ["postgresql+asyncpg://u:p@localhost/evergent", "sqlite+aiosqlite:///tmp/test.db"]
+    )
+    def test_urls_naming_a_driver_are_left_alone(self, url: str) -> None:
+        assert Settings(database_url=url, _env_file=None).database_url == url

@@ -39,3 +39,6 @@ logs/
 
 # Deploy state written by infrastructure/docker/deploy.sh on the host
 .deployed-tag
+
+# Vercel CLI project link (vercel link / vercel env pull)
+.vercel

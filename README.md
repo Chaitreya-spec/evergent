@@ -31,12 +31,13 @@ evergent/
 │   ├── src/lib/             typed API client (generated from OpenAPI), graph, events
 │   └── tests/               Vitest unit/component tests, Playwright end-to-end tests
 ├── infrastructure/
-│   ├── deployment/          DEPLOYMENT.md, BACKUP_AND_RESTORE.md, Caddyfile
+│   ├── deployment/          DEPLOYMENT.md, RENDER_AND_VERCEL.md, BACKUP_AND_RESTORE.md, Caddyfile
 │   ├── monitoring/          MONITORING.md
 │   └── docker/              backup.sh, restore.sh
 ├── .github/workflows/ci.yml lint, types, tests, migrations, e2e, image builds
 ├── docker-compose.yml       the full stack, production-style
 ├── docker-compose.dev.yml   Postgres + Redis only, for local development
+├── render.yaml              the backend on Render (the frontend goes on Vercel)
 └── .env.example             every setting, placeholders only
 ```
 
@@ -82,6 +83,9 @@ docker compose exec api python -m scripts.promote you@example.com
 
 For a public deployment with HTTPS, backups and rollback, follow
 [infrastructure/deployment/DEPLOYMENT.md](infrastructure/deployment/DEPLOYMENT.md).
+To host it without running a server yourself, with the backend on Render and
+the frontend on Vercel and both deploying from GitHub, follow
+[infrastructure/deployment/RENDER_AND_VERCEL.md](infrastructure/deployment/RENDER_AND_VERCEL.md).
 
 ### Local development
 
@@ -133,7 +137,8 @@ The comments in `docker-compose.dev.yml` give the matching `backend/.env` lines.
 | Redis | Recommended (required for a separate worker) | `REDIS_URL`, `CELERY_*` |
 | Web search for agents | Optional | `TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY` |
 | Email (password reset, verification) | Optional | `SMTP_*` |
-| Object storage | Optional | `STORAGE_BACKEND=s3`, `S3_*` |
+| Object storage | Optional | `STORAGE_BACKEND=s3`, `S3_*`; or `STORAGE_BACKEND=database` on hosts with no persistent disk |
+| Frontend hosted apart from the API (e.g. Vercel) | When it applies | `FRONTEND_PROXY_SECRET`, the same value on both |
 | Docker on the worker host (to execute generated tests) | Optional | `SANDBOX_ENABLED=true` |
 | Embedding model for semantic memory | Optional | uses `GOOGLE_API_KEY` or `OPENAI_API_KEY` if present |
 

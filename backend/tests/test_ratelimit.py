@@ -6,10 +6,11 @@ import uuid
 
 import pytest
 import redis.asyncio as aioredis
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.core.config import settings
 from app.core.ratelimit import RateLimiter, tier_for
+from app.main import app
 
 REDIS_URL = "redis://localhost:6379/15"
 
@@ -77,3 +78,41 @@ async def test_the_api_answers_429_with_retry_after(
     assert codes == [401, 401, 429]
     assert response.headers["Retry-After"].isdigit()
     assert response.json()["code"] == "rate_limited"
+
+
+PROXY_SECRET = "s" * 44
+
+
+async def _sign_in_via_remote_frontend(secret: str, browser: str) -> int:
+    """A sign-in as a frontend on Vercel relays it: from an address that no
+    TRUSTED_PROXIES entry covers, naming the browser it serves."""
+    transport = ASGITransport(app=app, client=("198.51.100.20", 1234))
+    async with AsyncClient(transport=transport, base_url="http://test") as frontend:
+        response = await frontend.post(
+            "/api/v1/auth/login",
+            json={"email": "x@example.com", "password": "wrong-password-x"},
+            headers={"x-evergent-proxy-secret": secret, "x-evergent-client-ip": browser},
+        )
+    return response.status_code
+
+
+async def test_behind_a_remote_frontend_each_browser_has_its_own_limit(
+    small_limits, monkeypatch, client: AsyncClient
+) -> None:
+    """Otherwise one person guessing passwords locks everyone out of signing in."""
+    monkeypatch.setattr("app.main.limiter", RateLimiter("redis://127.0.0.1:6390/0"))
+    monkeypatch.setattr(settings, "frontend_proxy_secret", PROXY_SECRET)
+    codes = [await _sign_in_via_remote_frontend(PROXY_SECRET, "203.0.113.9") for _ in range(3)]
+    assert codes == [401, 401, 429]
+    assert await _sign_in_via_remote_frontend(PROXY_SECRET, "203.0.113.77") == 401
+
+
+async def test_without_the_secret_a_client_cannot_pick_its_own_address(
+    small_limits, monkeypatch, client: AsyncClient
+) -> None:
+    """The client-address header is only believed with the secret, so it is no
+    way around the limit for someone calling the API directly."""
+    monkeypatch.setattr("app.main.limiter", RateLimiter("redis://127.0.0.1:6390/0"))
+    monkeypatch.setattr(settings, "frontend_proxy_secret", PROXY_SECRET)
+    codes = [await _sign_in_via_remote_frontend("forged", f"203.0.113.{n}") for n in range(3)]
+    assert codes == [401, 401, 429]

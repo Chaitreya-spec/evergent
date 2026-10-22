@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_COOKIE,
   API_URL,
+  clientHeaders,
   describeError,
   REFRESH_COOKIE,
   refreshTokens,
@@ -29,14 +30,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Enter your email and password." }, { status: 400 });
   }
 
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
   let upstream: Response;
   try {
     upstream = await fetch(`${API_URL}/api/v1/auth/${mode}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(forwarded ? { "x-forwarded-for": forwarded } : {}),
+        ...clientHeaders(request),
         "user-agent": request.headers.get("user-agent") ?? "",
       },
       body: JSON.stringify(
@@ -84,7 +84,6 @@ export async function DELETE(request: NextRequest) {
   let ended = true;
   if (access) {
     try {
-      const forwarded = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
       const upstream = await fetch(`${API_URL}/api/v1/auth/logout`, {
         method: "POST",
         // The client's address and browser, so the security log records who
@@ -92,7 +91,7 @@ export async function DELETE(request: NextRequest) {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${access}`,
-          ...(forwarded ? { "x-forwarded-for": forwarded } : {}),
+          ...clientHeaders(request),
           "user-agent": request.headers.get("user-agent") ?? "",
         },
         body: JSON.stringify({ everywhere }),

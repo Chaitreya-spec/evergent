@@ -5,16 +5,25 @@ proxy before it), so the TCP peer is a proxy, not the client. The client's
 address is taken from X-Forwarded-For — but only when the peer is a proxy
 listed in TRUSTED_PROXIES; otherwise anyone could claim any address and dodge
 the rate limit or forge the audit trail.
+
+A frontend hosted apart from the API (on Vercel, say) cannot be listed: its
+outbound address changes and the platform's own proxies sit in between. It
+proves itself with FRONTEND_PROXY_SECRET instead, and reports the client in
+X-Evergent-Client-IP, which no proxy on the way adds or rewrites.
 """
 
 from __future__ import annotations
 
+import hmac
 from functools import lru_cache
 from ipaddress import IPv4Network, IPv6Network, ip_address, ip_network
 
 from starlette.requests import Request
 
 from app.core.config import settings
+
+PROXY_SECRET_HEADER = "x-evergent-proxy-secret"
+CLIENT_IP_HEADER = "x-evergent-client-ip"
 
 
 @lru_cache(maxsize=1)
@@ -32,7 +41,20 @@ def _is_trusted(host: str | None) -> bool:
     return any(address in network for network in _trusted())
 
 
+def _from_frontend(request: Request) -> bool:
+    expected = settings.frontend_proxy_secret
+    offered = request.headers.get(PROXY_SECRET_HEADER)
+    if not expected or not offered:
+        return False
+    return hmac.compare_digest(expected.encode(), offered.encode())
+
+
 def client_ip(request: Request) -> str:
+    if _from_frontend(request):
+        try:
+            return str(ip_address(request.headers.get(CLIENT_IP_HEADER, "").strip()))
+        except ValueError:
+            pass  # vouched for, but with no usable address: judge it like any request
     peer = request.client.host if request.client else None
     if not _is_trusted(peer):
         return peer or "unknown"

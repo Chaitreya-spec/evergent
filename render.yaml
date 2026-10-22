@@ -1,0 +1,90 @@
+# Render Blueprint for the backend: the API, its Postgres and a Key Value
+# instance. The frontend runs on Vercel (frontend/vercel.json). Setup, step by
+# step: infrastructure/deployment/RENDER_AND_VERCEL.md
+#
+# Everything sits in one region so the API reaches Postgres and Key Value over
+# Render's private network. Keep it beside the Vercel function region in
+# frontend/vercel.json too: every page request crosses that hop.
+
+services:
+  - type: web
+    name: evergent-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: singapore
+    # 0.5 CPU / 512 MB. The API idles near 160 MB; move up to 1c-2g if many
+    # workflows run at once.
+    plan: 0.5c-512mb
+    healthCheckPath: /health
+    # Runs before the new version takes traffic. If a migration fails, the
+    # deploy stops there and the running version keeps serving.
+    preDeployCommand: sh -c "alembic upgrade head && python -m scripts.seed"
+    # Deploy a commit only after its GitHub checks (CI) have passed.
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # The image serves on 8000, and Render routes to PORT.
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evergent-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: evergent-kv
+          property: connectionString
+      # Generated once, when the Blueprint is first applied. Never regenerate
+      # ENCRYPTION_KEY: provider keys saved in the app are encrypted with it.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      # Copy this value into the Vercel project's FRONTEND_PROXY_SECRET.
+      - key: FRONTEND_PROXY_SECRET
+        generateValue: true
+      # The Vercel URL, e.g. https://evergent.vercel.app — asked for once.
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      # Workflows run inside the API, so there is no worker to pay for. A
+      # deploy interrupts running ones; they are marked paused and resume
+      # from the UI.
+      - key: EXECUTION_BACKEND
+        value: inline
+      # The container's disk is wiped on every deploy, so attachments live in
+      # Postgres (and in its backups).
+      - key: STORAGE_BACKEND
+        value: database
+      # No Docker inside Render containers: generated tests are reported as
+      # "not run", as in the Compose stack.
+      - key: SANDBOX_ENABLED
+        value: "false"
+
+  - type: keyvalue
+    name: evergent-kv
+    region: singapore
+    # Holds rate-limit windows and live-event fan-out, nothing that must
+    # survive a restart, so the free instance is enough.
+    plan: free
+    # Reachable only from Render services in this region.
+    ipAllowList: []
+
+databases:
+  - name: evergent-db
+    databaseName: evergent
+    user: evergent
+    region: singapore
+    plan: 0.1c-256mb
+    # Matches the pgvector/pgvector:pg17 image used everywhere else.
+    postgresMajorVersion: "17"
+    # Only Render services can connect. Add your own address in the dashboard
+    # if you need psql access.
+    ipAllowList: []

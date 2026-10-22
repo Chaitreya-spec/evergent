@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_COOKIE,
   API_URL,
+  clientHeaders,
   REFRESH_COOKIE,
   refreshTokens,
   sameOrigin,
@@ -16,6 +17,11 @@ import {
  * session's bearer token. Responses are streamed straight through, which is
  * what makes the live event stream and archive downloads work.
  */
+
+// The live event stream holds this function open for as long as a run is
+// watched. Serverless hosts end it at their limit (300 s on Vercel Hobby);
+// the page then reconnects from the last event it saw, so nothing is lost.
+export const maxDuration = 300;
 
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
 
@@ -48,10 +54,7 @@ function outgoingHeaders(request: NextRequest, token: string | undefined): Heade
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  // The backend rate-limits per client. Without this every browser would
-  // share the one bucket of this server's address.
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
-  if (forwarded) headers.set("x-forwarded-for", forwarded);
+  for (const [name, value] of Object.entries(clientHeaders(request))) headers.set(name, value);
   if (token) headers.set("authorization", `Bearer ${token}`);
   return headers;
 }

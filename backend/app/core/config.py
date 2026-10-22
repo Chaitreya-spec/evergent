@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     # Peers whose X-Forwarded-For is believed: the frontend server and any
     # reverse proxy in front of the API. Comma-separated IPs or CIDRs.
     trusted_proxies: Annotated[list[str], NoDecode] = ["127.0.0.1/32", "::1/128"]
+    # For a frontend hosted apart from the API (on Vercel, say): its outbound
+    # address changes, so TRUSTED_PROXIES cannot list it. It sends this shared
+    # secret instead, and the client address it reports is then believed.
+    frontend_proxy_secret: str | None = None
 
     # --- Execution limits --------------------------------------------------
     # Safety rails: a runaway workflow is stopped rather than billed.
@@ -129,8 +133,9 @@ class Settings(BaseSettings):
 
     # --- File storage ------------------------------------------------------
     # Uploaded attachments. "local" for development, "s3" for any
-    # S3-compatible bucket in production.
-    storage_backend: Literal["local", "s3"] = "local"
+    # S3-compatible bucket in production, "database" for hosts with neither a
+    # persistent disk nor an object store (most platforms-as-a-service).
+    storage_backend: Literal["local", "s3", "database"] = "local"
     storage_local_root: str = "~/.evergent/storage"
     s3_bucket: str | None = None
     s3_endpoint_url: str | None = None
@@ -192,6 +197,20 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _async_driver(cls, value: str) -> str:
+        """Accept the plain postgres:// URLs that hosting platforms hand out.
+
+        Render, Railway, Heroku and Neon give postgres:// or postgresql://, but
+        the app talks to Postgres through asyncpg, which SQLAlchemy only picks
+        for postgresql+asyncpg://.
+        """
+        for scheme in ("postgres://", "postgresql://"):
+            if value.startswith(scheme):
+                return "postgresql+asyncpg://" + value[len(scheme) :]
+        return value
+
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
         """Refuse to start in production with development defaults."""
@@ -206,6 +225,8 @@ class Settings(BaseSettings):
             problems.append("DEBUG must be false")
         if "*" in self.cors_origins:
             problems.append("CORS_ORIGINS cannot be '*'")
+        if self.frontend_proxy_secret and len(self.frontend_proxy_secret) < 32:
+            problems.append("FRONTEND_PROXY_SECRET must be a random value of at least 32 characters")
         if problems:
             raise ValueError("Unsafe production configuration: " + "; ".join(problems))
         return self
