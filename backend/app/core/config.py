@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import make_url
+
+_POSTGRES_URL = re.compile(r"postgres(?:ql)?(?:\+asyncpg)?://[^\s'\"]+")
 
 
 class Settings(BaseSettings):
@@ -24,6 +27,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # A settings error would otherwise print the values it was given —
+        # keys, secrets and the database password — into the logs.
+        hide_input_in_errors=True,
     )
 
     # --- Application -------------------------------------------------------
@@ -208,9 +214,16 @@ class Settings(BaseSettings):
         for postgresql+asyncpg://. They also spell TLS the libpq way, which
         asyncpg rejects outright.
         """
-        # Neon's Connect box also offers the string as a psql command; a copy
-        # of that, or of a quoted string, is the URL inside.
-        value = value.strip().removeprefix("psql ").strip().strip("'\"")
+        # What gets pasted is often more than the URL: Neon's Connect box also
+        # offers it as a psql command or a .env line, in quotes.
+        found = _POSTGRES_URL.search(value)
+        if found:
+            value = found.group(0)
+        elif "://" not in value:
+            raise ValueError(
+                "DATABASE_URL is not a database URL. It should start with "
+                "postgresql:// — copy the connection string from your database provider."
+            )
         for scheme in ("postgres://", "postgresql://"):
             if value.startswith(scheme):
                 value = "postgresql+asyncpg://" + value[len(scheme) :]

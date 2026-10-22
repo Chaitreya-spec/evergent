@@ -161,13 +161,26 @@ class TestDatabaseUrl:
             "psql 'postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'",
             "  postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require\n",
             '"postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"',
+            "DATABASE_URL='postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'",
+            'export DATABASE_URL="postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"',
         ],
     )
     def test_the_url_is_found_in_what_was_copied(self, pasted: str) -> None:
-        """Neon's Connect box offers the string as a psql command too."""
+        """Neon's Connect box offers the string as a psql command and a .env line too."""
         configured = Settings(database_url=pasted, _env_file=None)
         host = "ep-cool-123.ap-southeast-1.aws.neon.tech"
         assert configured.database_url == f"postgresql+asyncpg://u:p@{host}/neondb?ssl=require"
+
+    def test_something_that_is_not_a_url_is_named_clearly(self) -> None:
+        with pytest.raises(ValidationError, match="DATABASE_URL is not a database URL") as caught:
+            Settings(database_url="neondb_owner:hunter2-password", _env_file=None)
+        assert "hunter2" not in str(caught.value)
+
+    def test_errors_never_print_the_values_they_were_given(self) -> None:
+        """They end up in the host's logs, and some of them are secrets."""
+        with pytest.raises(ValidationError) as caught:
+            Settings(environment="production", secret_key="short", frontend_proxy_secret="leaky-secret", _env_file=None)
+        assert "leaky-secret" not in str(caught.value)
 
     def test_an_escaped_password_survives_the_rewrite(self) -> None:
         configured = Settings(database_url="postgresql://u:p%40ss%2Fw@h.example/db?sslmode=require", _env_file=None)
