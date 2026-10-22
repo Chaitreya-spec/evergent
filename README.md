@@ -85,6 +85,15 @@ For a public deployment with HTTPS, backups and rollback, follow
 
 ### Local development
 
+After the one-time setup below, one command starts everything (database
+check, migrations, backend, website) and Ctrl+C stops it:
+
+```bash
+./dev.sh          # then open http://localhost:3000
+```
+
+One-time setup:
+
 Requires Python 3.13, Node 20.9+ (22 recommended) and Docker (for Postgres and Redis).
 
 ```bash

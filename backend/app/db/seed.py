@@ -94,21 +94,41 @@ MODELS: list[dict] = [
             "tool_use": 9.4, "vision": 9.1,
         },
     },
+    # Google's "-latest" aliases, so these rows do not go stale as versions
+    # are retired. Checked against a real key on 2026-10-18: both answer;
+    # Pro models need a paid quota (free keys get 429), so none is seeded.
     {
         "provider": "google",
-        "name": "gemini-3-pro",
-        "display_name": "Gemini 3 Pro",
-        "remote_id": "gemini-3-pro",
-        "context_window": 1_000_000,
-        "max_output_tokens": 64_000,
-        "cost_per_input_token": 1.25 / 1e6,
-        "cost_per_output_token": 10 / 1e6,
-        "avg_latency_ms": 4500,
+        "name": "gemini-flash",
+        "display_name": "Gemini Flash",
+        "remote_id": "gemini-flash-latest",
+        "context_window": 1_048_576,
+        "max_output_tokens": 65_536,
+        "cost_per_input_token": 0.30 / 1e6,
+        "cost_per_output_token": 2.50 / 1e6,
+        "avg_latency_ms": 2500,
         "capabilities": {
-            "reasoning": 9.1, "coding": 9.0, "backend": 8.9, "frontend": 9.5,
-            "debugging": 8.8, "mathematics": 9.2, "research": 9.0,
-            "writing": 9.0, "long_context": 9.6, "structured_output": 9.1,
-            "tool_use": 9.0, "vision": 9.6,
+            "reasoning": 8.6, "coding": 8.6, "backend": 8.5, "frontend": 8.9,
+            "debugging": 8.3, "mathematics": 8.7, "research": 8.5,
+            "writing": 8.6, "long_context": 9.2, "structured_output": 8.8,
+            "tool_use": 8.6, "vision": 9.0,
+        },
+    },
+    {
+        "provider": "google",
+        "name": "gemini-flash-lite",
+        "display_name": "Gemini Flash-Lite",
+        "remote_id": "gemini-flash-lite-latest",
+        "context_window": 1_048_576,
+        "max_output_tokens": 65_536,
+        "cost_per_input_token": 0.10 / 1e6,
+        "cost_per_output_token": 0.40 / 1e6,
+        "avg_latency_ms": 1500,
+        "capabilities": {
+            "reasoning": 7.6, "coding": 7.5, "backend": 7.4, "frontend": 7.8,
+            "debugging": 7.2, "mathematics": 7.6, "research": 7.6,
+            "writing": 8.0, "long_context": 8.8, "structured_output": 8.3,
+            "tool_use": 7.8, "vision": 8.4,
         },
     },
     # --- Through the model gateway (COMPATIBLE_BASE_URL) -------------------
@@ -170,6 +190,11 @@ MODELS: list[dict] = [
 ]
 
 
+# Models no longer offered. Seeding switches them off where they already
+# exist, so the router stops choosing them; their history is kept.
+RETIRED_MODELS = {"gemini-3-pro"}
+
+
 async def seed_catalog(session: AsyncSession) -> tuple[int, int]:
     """Idempotent: safe to run on every boot and in tests."""
     providers_added = models_added = 0
@@ -208,6 +233,9 @@ async def seed_catalog(session: AsyncSession) -> tuple[int, int]:
             )
         )
         models_added += 1
+
+    for retired in await session.scalars(select(Model).where(Model.name.in_(RETIRED_MODELS))):
+        retired.is_enabled = False
 
     await session.commit()
     log.info("catalog_seeded", providers=providers_added, models=models_added)

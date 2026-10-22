@@ -35,7 +35,8 @@ class TestRouting:
         decision = await router.route(
             TaskType.FRONTEND, strategy=RoutingStrategy.HIGHEST_QUALITY
         )
-        assert decision.model.name == "gemini-3-pro"
+        # Gemini Pro scores highest on frontend work; it is seeded via the gateway.
+        assert decision.model.name == "gemini-pro-latest"
 
     async def test_debugging_goes_to_the_strongest_debugger(self, router) -> None:
         decision = await router.route(
