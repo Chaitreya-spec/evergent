@@ -1,9 +1,9 @@
-# Hosting on Render and Vercel
+# Hosting on Render, Neon and Vercel, free
 
-The backend (API, Postgres with pgvector, Key Value) runs on Render from
-[`render.yaml`](../../render.yaml); the frontend runs on Vercel from
-[`frontend/`](../../frontend). Both deploy from GitHub on every push to `main`,
-so nothing runs on your machine.
+The API runs on Render's free plan from [`render.yaml`](../../render.yaml),
+Postgres on Neon's free plan, and the frontend on Vercel's Hobby plan from
+[`frontend/`](../../frontend). Render and Vercel deploy from GitHub on every
+push to `main`, so nothing runs on your machine.
 
 ```
  browser ──HTTPS──▶ Vercel (Next.js, sin1)
@@ -11,26 +11,40 @@ so nothing runs on your machine.
                       │  plus FRONTEND_PROXY_SECRET and the browser's address
                       ▼
                     Render: evergent-api (FastAPI, singapore)
-                      ├──▶ evergent-db  (Postgres 17 + pgvector, private)
-                      └──▶ evergent-kv  (Key Value, private)
+                      ├──▶ Neon: Postgres 17 + pgvector (Singapore)
+                      └──▶ Render: evergent-kv (Key Value, private)
 ```
 
-The browser only ever talks to Vercel. Postgres and Key Value accept no
-connections from outside Render.
+The browser only ever talks to Vercel.
+
+Postgres is on Neon because Render deletes free databases 30 days after
+creation. Neon's free databases do not expire.
 
 For a single host you run yourself (Docker Compose, Caddy, scripted deploys
 over SSH), see [DEPLOYMENT.md](DEPLOYMENT.md) instead.
 
-## 1. Backend on Render
+## 1. Database on Neon
+
+1. Sign up at [neon.com](https://neon.com). The free plan needs no card.
+2. Create a project. Choose Postgres **17** and the region **AWS Asia
+   Pacific (Singapore)**, beside the API.
+3. Open **Connect** and copy the connection string. It starts with
+   `postgresql://` and ends with `sslmode=require`. Pooled or not makes no
+   difference: the app connects to Neon's direct endpoint either way.
+
+The first deploy creates the tables, including the pgvector extension.
+
+## 2. Backend on Render
 
 1. In Render, **New → Blueprint**, connect GitHub and pick this repository.
-   Render reads `render.yaml` and lists what it will create: `evergent-api`,
-   `evergent-db` and `evergent-kv`, with the monthly total.
-2. It asks for two values. Enter the URL the frontend will have, which is
-   `https://<vercel project name>.vercel.app`. A guess is fine; step 3 fixes
-   it if it turns out different.
-   - `FRONTEND_URL`, used in password-reset and verification emails
-   - `CORS_ORIGINS`, set to the same URL
+   Render reads `render.yaml` and lists `evergent-api` and `evergent-kv`,
+   both on the free plan.
+2. It asks for three values:
+   - `DATABASE_URL`: the Neon connection string from step 1.3.
+   - `FRONTEND_URL`: the URL the frontend will have,
+     `https://<vercel project name>.vercel.app`. A guess is fine; step 4
+     fixes it if it turns out different.
+   - `CORS_ORIGINS`: the same URL.
 3. **Apply**. The first deploy builds the image, runs the migrations and
    seeds the model catalogue, which takes a few minutes.
 4. Open **evergent-api** and copy its URL, for example
@@ -41,7 +55,7 @@ over SSH), see [DEPLOYMENT.md](DEPLOYMENT.md) instead.
 Render. You never type them. Do not regenerate `ENCRYPTION_KEY` later:
 provider keys saved in the app are encrypted with it.
 
-## 2. Frontend on Vercel
+## 3. Frontend on Vercel
 
 1. In Vercel, **Add New → Project** and import the same repository.
 2. Set **Root Directory** to `frontend`. Vercel then detects Next.js; leave
@@ -50,7 +64,7 @@ provider keys saved in the app are encrypted with it.
 
    | Name | Value |
    | --- | --- |
-   | `EVERGENT_API_URL` | The Render URL from step 1.4, with no trailing slash |
+   | `EVERGENT_API_URL` | The Render URL from step 2.4, with no trailing slash |
    | `FRONTEND_PROXY_SECRET` | Render → evergent-api → **Environment** → copy `FRONTEND_PROXY_SECRET` |
 
 4. **Deploy**, then open the URL Vercel gives you.
@@ -60,32 +74,32 @@ outbound address changes from request to request, so without the secret every
 visitor would share one rate-limit allowance, and the sign-in limit of 20 a
 minute would apply to everyone at once.
 
-## 3. Connect them
+## 4. Connect them
 
-If the Vercel URL is not the one you guessed in step 1.2, go to Render →
+If the Vercel URL is not the one you guessed in step 2.2, go to Render →
 evergent-api → **Environment**, set `FRONTEND_URL` and `CORS_ORIGINS` to the
 real URL, and save. Render redeploys on its own.
 
-## 4. A model provider
+## 5. A model provider
 
 The app needs at least one provider key. Add it in Render → evergent-api →
 **Environment**, using one or more of `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`,
 `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or `COMPATIBLE_BASE_URL` with
 `COMPATIBLE_API_KEY` for an OpenAI-compatible gateway.
 
-You can instead add keys from the app (**Models & providers → Set key**)
-once you are an administrator. They are stored encrypted.
-
 `<API URL>/ready` reports `"status":"ok"` once a provider is configured.
 
-## 5. First administrator
+## 6. First administrator
 
-Sign up on the Vercel URL. The account starts as a member. Then, in Render →
-evergent-api → **Shell**:
+Sign up on the Vercel URL. The account starts as a member. Then, in Neon,
+open **SQL Editor** and run:
 
-```bash
-python -m scripts.promote you@example.com
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
 ```
+
+It should report `UPDATE 1`. Sign out and in again. Render's free plan has no
+Shell, so this replaces `python -m scripts.promote`.
 
 ## How changes ship from now on
 
@@ -95,53 +109,48 @@ Push to `main`. Then:
   requests get their own preview URLs.
 - **Render** waits for the commit's GitHub checks (CI) to pass, then deploys
   the backend, but only when something under `backend/` changed.
-  Migrations run before the new version takes traffic; if one fails, the old
-  version keeps serving.
+  Migrations run as the new container starts. If one fails, the deploy fails
+  and Render's **Logs** show the error.
 - **Configuration** changes in `render.yaml` are applied by Render when it
   syncs the Blueprint.
 
-## What differs from the Compose deployment
+## What the free plans mean
 
-- **Workflows run inside the API** (`EXECUTION_BACKEND=inline`), so there is
-  no worker to pay for. A backend deploy interrupts running workflows; they
-  are marked paused and resume from the UI.
+- **The API sleeps after 15 minutes with no visitors**, and the next visit
+  takes about a minute while it wakes. To keep it always on, change
+  `plan: free` to `plan: 0.5c-512mb` in `render.yaml`, a paid instance.
+- **Workflows run inside the API** (`EXECUTION_BACKEND=inline`). A deploy, or
+  the API going to sleep, interrupts running workflows; they are marked
+  paused and resume from the UI. An open run page keeps the API awake, so
+  stay on it during long runs.
 - **Attachments are stored in Postgres** (`STORAGE_BACKEND=database`),
-  because Render wipes the container's disk on every deploy. Postgres
-  backups include them.
+  because Render wipes the container's disk on every deploy.
 - **Generated tests are reported as "not run"**, because Render containers
   have no Docker. This is the same default as the Compose stack; see
   DEPLOYMENT.md §6.
 - **Live run updates reconnect every few minutes.** Vercel ends a function
   at its time limit (300 s on Hobby). The page reconnects from the last event
   it saw, so nothing is lost; you may see "reconnecting" for a second.
-
-## Regions
-
-Everything is in Singapore (`render.yaml`) beside Vercel's `sin1`
-(`frontend/vercel.json`). Each page request goes from Vercel to the API, so
-those two must stay together. To move closer to your users, change both:
-Render's `region` (Render calls the US regions `virginia`, `ohio` and
-`oregon`, and also offers `frankfurt`) and Vercel's `regions`, for example
-`iad1`. A Render service cannot change region once created, so moving means
-applying the Blueprint again.
-
-## Costs and limits
-
-- Render: `evergent-api` (0.5 CPU / 512 MB) and `evergent-db` are paid
-  instances; `evergent-kv` is free. The Blueprint screen shows the exact
-  monthly total before anything is created. Avoid Render's free Postgres for
-  real data: free databases expire.
-- Vercel: Hobby is free, but it is for personal, non-commercial use. A
-  commercial deployment needs Pro.
+- **Render's free hours** (750 a month per workspace) cover one service
+  running all month. **Vercel Hobby** is for personal, non-commercial use.
 - Model spend is separate, and capped per workflow and per day by
   `MAX_WORKFLOW_COST_USD` and `MAX_DAILY_COST_USD`, which default to $5 and
   $20. Set them in Render's Environment to amounts you accept.
+
+## Regions
+
+Everything is in Singapore: Render's `region`, Neon's project, and Vercel's
+`sin1` (`frontend/vercel.json`). Each page request goes from Vercel to the
+API and on to the database, so all three must stay together. To move them,
+change all three. A Render service or Neon project cannot change region once
+created, so moving means creating them again.
 
 ## When something is wrong
 
 | Symptom | Likely cause |
 | --- | --- |
+| The first page takes about a minute | The free API was asleep. It is awake for the next 15 minutes. |
 | "The backend is not reachable right now." | `EVERGENT_API_URL` on Vercel is wrong or has a trailing path, or the Render deploy failed (check its **Events** and **Logs**). |
 | Everyone gets "too many attempts" on sign-in | `FRONTEND_PROXY_SECRET` is missing on Vercel or differs from Render's. Redeploy Vercel after fixing it, since env changes apply to new deployments. |
-| `/ready` says `"degraded"` | No provider key yet (step 4), or the database is unreachable. |
-| Render deploy fails in **pre-deploy** | A migration failed. The previous version is still serving. The log shows the error. |
+| `/ready` says `"degraded"` | No provider key yet (step 5), or the database is unreachable: check `DATABASE_URL`. |
+| The Render deploy fails while starting | A migration failed or `DATABASE_URL` is wrong. **Logs** shows which. |

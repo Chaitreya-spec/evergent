@@ -1,10 +1,10 @@
-# Render Blueprint for the backend: the API, its Postgres and a Key Value
-# instance. The frontend runs on Vercel (frontend/vercel.json). Setup, step by
-# step: infrastructure/deployment/RENDER_AND_VERCEL.md
+# Render Blueprint for the backend API and its Key Value instance, on Render's
+# free plan. Postgres is on Neon's free plan, because Render deletes free
+# databases after 30 days. The frontend runs on Vercel (frontend/vercel.json).
+# Setup, step by step: infrastructure/deployment/RENDER_AND_VERCEL.md
 #
-# Everything sits in one region so the API reaches Postgres and Key Value over
-# Render's private network. Keep it beside the Vercel function region in
-# frontend/vercel.json too: every page request crosses that hop.
+# Keep this region beside the Neon database and the Vercel function region in
+# frontend/vercel.json: every page request crosses both hops.
 
 services:
   - type: web
@@ -13,13 +13,13 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     region: singapore
-    # 0.5 CPU / 512 MB. The API idles near 160 MB; move up to 1c-2g if many
-    # workflows run at once.
-    plan: 0.5c-512mb
+    # Free: sleeps after 15 idle minutes and takes about a minute to wake.
+    # Change to 0.5c-512mb to keep it always on.
+    plan: free
     healthCheckPath: /health
-    # Runs before the new version takes traffic. If a migration fails, the
-    # deploy stops there and the running version keeps serving.
-    preDeployCommand: sh -c "alembic upgrade head && python -m scripts.seed"
+    # Migrations run as the container starts rather than as a pre-deploy step,
+    # which works on every plan. Both are no-ops when there is nothing to do.
+    dockerCommand: sh -c "alembic upgrade head && python -m scripts.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     # Deploy a commit only after its GitHub checks (CI) have passed.
     autoDeployTrigger: checksPass
     buildFilter:
@@ -31,10 +31,9 @@ services:
       # The image serves on 8000, and Render routes to PORT.
       - key: PORT
         value: "8000"
+      # Neon's connection string, as copied from its dashboard — asked for once.
       - key: DATABASE_URL
-        fromDatabase:
-          name: evergent-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           type: keyvalue
@@ -55,8 +54,8 @@ services:
       - key: CORS_ORIGINS
         sync: false
       # Workflows run inside the API, so there is no worker to pay for. A
-      # deploy interrupts running ones; they are marked paused and resume
-      # from the UI.
+      # deploy, or the instance going to sleep, interrupts running ones; they
+      # are marked paused and resume from the UI.
       - key: EXECUTION_BACKEND
         value: inline
       # The container's disk is wiped on every deploy, so attachments live in
@@ -75,16 +74,4 @@ services:
     # survive a restart, so the free instance is enough.
     plan: free
     # Reachable only from Render services in this region.
-    ipAllowList: []
-
-databases:
-  - name: evergent-db
-    databaseName: evergent
-    user: evergent
-    region: singapore
-    plan: 0.1c-256mb
-    # Matches the pgvector/pgvector:pg17 image used everywhere else.
-    postgresMajorVersion: "17"
-    # Only Render services can connect. Add your own address in the dashboard
-    # if you need psql access.
     ipAllowList: []

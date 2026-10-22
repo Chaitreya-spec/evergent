@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.engine import make_url
 from starlette.requests import Request
 
 from app.core import net
@@ -130,3 +131,31 @@ class TestDatabaseUrl:
     )
     def test_urls_naming_a_driver_are_left_alone(self, url: str) -> None:
         assert Settings(database_url=url, _env_file=None).database_url == url
+
+    def test_libpq_tls_options_are_translated_for_each_driver(self) -> None:
+        """Neon's string, as copied: asyncpg refuses sslmode= and channel_binding=."""
+        configured = Settings(
+            database_url="postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb"
+            "?sslmode=require&channel_binding=require",
+            _env_file=None,
+        )
+        host = "ep-cool-123.ap-southeast-1.aws.neon.tech"
+        assert configured.database_url == f"postgresql+asyncpg://u:p@{host}/neondb?ssl=require"
+        assert configured.sync_database_url == f"postgresql://u:p@{host}/neondb?sslmode=require"
+
+    def test_a_neon_pooled_url_connects_directly(self) -> None:
+        configured = Settings(
+            database_url="postgresql://u:p@ep-cool-123-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require",
+            _env_file=None,
+        )
+        assert "@ep-cool-123.ap-southeast-1.aws.neon.tech/" in configured.database_url
+        assert "@ep-cool-123.ap-southeast-1.aws.neon.tech/" in configured.sync_database_url
+
+    def test_other_hosts_named_pooler_are_left_alone(self) -> None:
+        configured = Settings(database_url="postgresql://u:p@db-pooler.example.com/app", _env_file=None)
+        assert configured.database_url == "postgresql+asyncpg://u:p@db-pooler.example.com/app"
+
+    def test_an_escaped_password_survives_the_rewrite(self) -> None:
+        configured = Settings(database_url="postgresql://u:p%40ss%2Fw@h.example/db?sslmode=require", _env_file=None)
+        assert configured.database_url == "postgresql+asyncpg://u:p%40ss%2Fw@h.example/db?ssl=require"
+        assert make_url(configured.database_url).password == "p@ss/w"

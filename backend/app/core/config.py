@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -200,16 +201,37 @@ class Settings(BaseSettings):
     @field_validator("database_url", mode="after")
     @classmethod
     def _async_driver(cls, value: str) -> str:
-        """Accept the plain postgres:// URLs that hosting platforms hand out.
+        """Accept the connection strings that hosting platforms hand out.
 
         Render, Railway, Heroku and Neon give postgres:// or postgresql://, but
         the app talks to Postgres through asyncpg, which SQLAlchemy only picks
-        for postgresql+asyncpg://.
+        for postgresql+asyncpg://. They also spell TLS the libpq way, which
+        asyncpg rejects outright.
         """
         for scheme in ("postgres://", "postgresql://"):
             if value.startswith(scheme):
-                return "postgresql+asyncpg://" + value[len(scheme) :]
-        return value
+                value = "postgresql+asyncpg://" + value[len(scheme) :]
+                break
+        if not value.startswith("postgresql+asyncpg://"):
+            return value
+
+        url = make_url(value)
+        query = dict(url.query)
+        if "sslmode" in query:
+            query["ssl"] = query.pop("sslmode")
+        # asyncpg has no such option. Dropping it only stops the client from
+        # insisting on channel binding; TLS still protects the connection.
+        query.pop("channel_binding", None)
+        host = url.host or ""
+        # Neon's pooled endpoint is PgBouncer in transaction mode. One API
+        # process does not need it, and the direct endpoint is plain Postgres,
+        # so a pasted pooled URL is pointed at the direct one.
+        if host.endswith(".neon.tech"):
+            endpoint, _, rest = host.partition(".")
+            host = f"{endpoint.removesuffix('-pooler')}.{rest}"
+        if query == dict(url.query) and host == (url.host or ""):
+            return value
+        return url.set(host=host or None, query=query).render_as_string(hide_password=False)
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
@@ -237,8 +259,17 @@ class Settings(BaseSettings):
 
     @property
     def sync_database_url(self) -> str:
-        """Alembic and other sync tooling cannot use the asyncpg driver."""
-        return self.database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+        """Alembic and other sync tooling cannot use the asyncpg driver.
+
+        They run on psycopg, which spells TLS the libpq way again.
+        """
+        if not self.database_url.startswith("postgresql+asyncpg://"):
+            return self.database_url.replace("+aiosqlite", "")
+        url = make_url(self.database_url)
+        query = dict(url.query)
+        if "ssl" in query:
+            query["sslmode"] = query.pop("ssl")
+        return url.set(drivername="postgresql", query=query).render_as_string(hide_password=False)
 
 
 @lru_cache

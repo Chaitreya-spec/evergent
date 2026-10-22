@@ -37,7 +37,7 @@ evergent/
 ├── .github/workflows/ci.yml lint, types, tests, migrations, e2e, image builds
 ├── docker-compose.yml       the full stack, production-style
 ├── docker-compose.dev.yml   Postgres + Redis only, for local development
-├── render.yaml              the backend on Render (the frontend goes on Vercel)
+├── render.yaml              the API on Render (Postgres on Neon, frontend on Vercel)
 └── .env.example             every setting, placeholders only
 ```
 
@@ -83,8 +83,8 @@ docker compose exec api python -m scripts.promote you@example.com
 
 For a public deployment with HTTPS, backups and rollback, follow
 [infrastructure/deployment/DEPLOYMENT.md](infrastructure/deployment/DEPLOYMENT.md).
-To host it without running a server yourself, with the backend on Render and
-the frontend on Vercel and both deploying from GitHub, follow
+To host it for free without running a server yourself, with the API on Render,
+Postgres on Neon and the frontend on Vercel, deploying from GitHub, follow
 [infrastructure/deployment/RENDER_AND_VERCEL.md](infrastructure/deployment/RENDER_AND_VERCEL.md).
 
 ### Local development
