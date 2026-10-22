@@ -62,7 +62,10 @@ x-backend-env: &backend-env
 
 x-backend: &backend
   build: ./backend
-  image: evergent-backend:${IMAGE_TAG:-latest}
+  # REGISTRY is empty by default, so `up --build` builds locally as before. Set
+  # it (with a trailing slash) to pull images CI published instead of building:
+  #   REGISTRY=ghcr.io/chaitreya-spec/ IMAGE_TAG=<sha> docker compose up -d
+  image: ${REGISTRY-}evergent-backend:${IMAGE_TAG:-latest}
   restart: unless-stopped
   environment: *backend-env
   volumes:
@@ -133,7 +136,7 @@ services:
 
   frontend:
     build: ./frontend
-    image: evergent-frontend:${IMAGE_TAG:-latest}
+    image: ${REGISTRY-}evergent-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       EVERGENT_API_URL: http://api:8000

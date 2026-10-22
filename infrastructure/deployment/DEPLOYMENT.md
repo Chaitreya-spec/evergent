@@ -67,6 +67,20 @@ docker compose ps
 The `migrate` service runs `alembic upgrade head` and seeds the model catalogue
 once, then exits; the API and worker start only after it succeeds.
 
+To pull the images CI already built instead of building them on the server, set
+`REGISTRY` (trailing slash required) and drop `--build`:
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u <username> --password-stdin
+REGISTRY=ghcr.io/chaitreya-spec/ IMAGE_TAG=$(git rev-parse HEAD) \
+  docker compose --profile tls up -d
+```
+
+CI publishes `ghcr.io/chaitreya-spec/evergent-{backend,frontend}` on every push
+to `main`, tagged `latest` and with the full commit SHA. Pin the SHA rather than
+`latest` so a rollback is a one-line change. The login step is only needed while
+the packages are private; a personal access token with `read:packages` is enough.
+
 Check health:
 
 ```bash
