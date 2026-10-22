@@ -208,6 +208,9 @@ class Settings(BaseSettings):
         for postgresql+asyncpg://. They also spell TLS the libpq way, which
         asyncpg rejects outright.
         """
+        # Neon's Connect box also offers the string as a psql command; a copy
+        # of that, or of a quoted string, is the URL inside.
+        value = value.strip().removeprefix("psql ").strip().strip("'\"")
         for scheme in ("postgres://", "postgresql://"):
             if value.startswith(scheme):
                 value = "postgresql+asyncpg://" + value[len(scheme) :]

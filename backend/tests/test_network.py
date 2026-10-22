@@ -155,6 +155,20 @@ class TestDatabaseUrl:
         configured = Settings(database_url="postgresql://u:p@db-pooler.example.com/app", _env_file=None)
         assert configured.database_url == "postgresql+asyncpg://u:p@db-pooler.example.com/app"
 
+    @pytest.mark.parametrize(
+        "pasted",
+        [
+            "psql 'postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'",
+            "  postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require\n",
+            '"postgresql://u:p@ep-cool-123.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"',
+        ],
+    )
+    def test_the_url_is_found_in_what_was_copied(self, pasted: str) -> None:
+        """Neon's Connect box offers the string as a psql command too."""
+        configured = Settings(database_url=pasted, _env_file=None)
+        host = "ep-cool-123.ap-southeast-1.aws.neon.tech"
+        assert configured.database_url == f"postgresql+asyncpg://u:p@{host}/neondb?ssl=require"
+
     def test_an_escaped_password_survives_the_rewrite(self) -> None:
         configured = Settings(database_url="postgresql://u:p%40ss%2Fw@h.example/db?sslmode=require", _env_file=None)
         assert configured.database_url == "postgresql+asyncpg://u:p%40ss%2Fw@h.example/db?ssl=require"

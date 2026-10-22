@@ -18,8 +18,9 @@ services:
     plan: free
     healthCheckPath: /health
     # Migrations run as the container starts rather than as a pre-deploy step,
-    # which works on every plan. Both are no-ops when there is nothing to do.
-    dockerCommand: sh -c "alembic upgrade head && python -m scripts.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # which works on every plan. A script, because Render does not document
+    # how it splits a command line, so quotes and && are best kept out of it.
+    dockerCommand: sh scripts/start.sh
     # Deploy a commit only after its GitHub checks (CI) have passed.
     autoDeployTrigger: checksPass
     buildFilter:
