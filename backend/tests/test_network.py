@@ -176,6 +176,11 @@ class TestDatabaseUrl:
             Settings(database_url="neondb_owner:hunter2-password", _env_file=None)
         assert "hunter2" not in str(caught.value)
 
+    def test_a_page_address_is_named_clearly(self) -> None:
+        """The browser's address bar is an easy thing to copy instead."""
+        with pytest.raises(ValidationError, match="starts with https:// but should start with postgresql://"):
+            Settings(database_url="https://console.neon.tech/app/projects/cool-123", _env_file=None)
+
     def test_errors_never_print_the_values_they_were_given(self) -> None:
         """They end up in the host's logs, and some of them are secrets."""
         with pytest.raises(ValidationError) as caught:

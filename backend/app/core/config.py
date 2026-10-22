@@ -229,6 +229,12 @@ class Settings(BaseSettings):
                 value = "postgresql+asyncpg://" + value[len(scheme) :]
                 break
         if not value.startswith("postgresql+asyncpg://"):
+            scheme = value.split("://", 1)[0][-40:]
+            if not scheme.startswith(("postgresql", "sqlite")):
+                raise ValueError(
+                    f"DATABASE_URL starts with {scheme}:// but should start with postgresql:// — "
+                    "copy the connection string from your database provider, not a page address."
+                )
             return value
 
         url = make_url(value)
