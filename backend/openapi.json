@@ -642,6 +642,23 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "AuthProviders": {
+        "properties": {
+          "google_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Client Id"
+          }
+        },
+        "title": "AuthProviders",
+        "type": "object"
+      },
       "Body_upload_api_v1_projects__project_id__attachments_post": {
         "properties": {
           "file": {
@@ -859,6 +876,28 @@
           "created_at"
         ],
         "title": "ExecutionOut",
+        "type": "object"
+      },
+      "GoogleSignIn": {
+        "properties": {
+          "code": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Redirect Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "redirect_uri"
+        ],
+        "title": "GoogleSignIn",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -4004,6 +4043,48 @@
         ]
       }
     },
+    "/api/v1/auth/google": {
+      "post": {
+        "description": "Sign in with Google, creating the account on first use.\n\nAn existing account with the same address is the same person: Google has\nverified that they hold it, just as our own confirmation email would.",
+        "operationId": "google_api_v1_auth_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Google",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -4224,6 +4305,28 @@
           }
         },
         "summary": "Request Password Reset",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/providers": {
+      "get": {
+        "description": "Which sign-in methods besides a password this server offers.",
+        "operationId": "providers_api_v1_auth_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProviders"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Providers",
         "tags": [
           "auth"
         ]

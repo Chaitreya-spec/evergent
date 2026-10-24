@@ -137,6 +137,7 @@ The comments in `docker-compose.dev.yml` give the matching `backend/.env` lines.
 | Redis | Recommended (required for a separate worker) | `REDIS_URL`, `CELERY_*` |
 | Web search for agents | Optional | `TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY` |
 | Email (password reset, verification) | Optional | `SMTP_*` |
+| "Continue with Google" sign-in | Optional | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (Web application OAuth client; redirect URI `<frontend URL>/api/auth/google/callback`) |
 | Object storage | Optional | `STORAGE_BACKEND=s3`, `S3_*`; or `STORAGE_BACKEND=database` on hosts with no persistent disk |
 | Frontend hosted apart from the API (e.g. Vercel) | When it applies | `FRONTEND_PROXY_SECRET`, the same value on both |
 | Docker on the worker host (to execute generated tests) | Optional | `SANDBOX_ENABLED=true` |

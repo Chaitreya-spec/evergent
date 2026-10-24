@@ -54,6 +54,12 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # Optional "Continue with Google". Redirect URI to register in Google
+      # Cloud: <FRONTEND_URL>/api/auth/google/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       # Workflows run inside the API, so there is no worker to pay for. A
       # deploy, or the instance going to sleep, interrupts running ones; they
       # are marked paused and resume from the UI.
