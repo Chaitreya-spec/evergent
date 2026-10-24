@@ -118,6 +118,28 @@ export function sameOrigin(request: NextRequest): boolean {
   }
 }
 
+/** This app's address as the browser sees it, behind any proxy. */
+export function publicOrigin(request: NextRequest): string {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host;
+  const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(/:$/, "");
+  return `${proto}://${host}`;
+}
+
+/**
+ * The Google OAuth client id when the backend offers "Continue with Google",
+ * else null — including when the backend cannot be reached.
+ */
+export async function googleClientId(): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/auth/providers`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { google_client_id?: string | null };
+    return body.google_client_id || null;
+  } catch {
+    return null;
+  }
+}
+
 export function unreachable(): { message: string } {
   return {
     message:

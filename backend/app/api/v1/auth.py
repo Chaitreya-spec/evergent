@@ -11,13 +11,15 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import httpx
+import jwt
 from fastapi import APIRouter, BackgroundTasks, Request, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.api.deps import CurrentSession, CurrentUser, SessionDep
 from app.core.config import settings
-from app.core.errors import AuthenticationError, ConflictError
+from app.core.errors import AuthenticationError, ConflictError, NotFoundError
 from app.core.net import client_ip
 from app.core.security import (
     TokenError,
@@ -31,6 +33,8 @@ from app.core.security import (
 )
 from app.models.entities import AuthSession, User
 from app.schemas.auth import (
+    AuthProviders,
+    GoogleSignIn,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -129,6 +133,104 @@ async def login(payload: LoginRequest, session: SessionDep, request: Request) ->
 
     tokens = await _open_session(session, user, request)
     audit.record(session, "auth.login", user_id=user.id, request=request)
+    await session.commit()
+    return tokens
+
+
+# --- Google ------------------------------------------------------------------
+
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
+
+
+@router.get("/providers", response_model=AuthProviders)
+async def providers() -> AuthProviders:
+    """Which sign-in methods besides a password this server offers."""
+    configured = settings.google_client_id and settings.google_client_secret
+    return AuthProviders(google_client_id=settings.google_client_id if configured else None)
+
+
+async def _google_identity(code: str, redirect_uri: str) -> dict:
+    """Trade an authorization code for the account's verified claims."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise AuthenticationError("Google could not be reached — try again") from exc
+    if response.status_code != 200:
+        raise AuthenticationError("Google did not accept this sign-in — try again")
+    id_token = response.json().get("id_token")
+    if not isinstance(id_token, str):
+        raise AuthenticationError("Google did not say who signed in")
+    # The token came straight from Google over TLS in answer to our own client
+    # secret, so its signature need not be checked again (OpenID Connect Core
+    # 3.1.3.7); who it was issued for, by whom, and until when still must be.
+    try:
+        claims = jwt.decode(id_token, options={"verify_signature": False})
+    except jwt.InvalidTokenError as exc:
+        raise AuthenticationError("Google did not say who signed in") from exc
+    if (
+        claims.get("aud") != settings.google_client_id
+        or claims.get("iss") not in GOOGLE_ISSUERS
+        or not isinstance(claims.get("exp"), int | float)
+        or claims["exp"] < datetime.now(UTC).timestamp()
+    ):
+        raise AuthenticationError("This Google sign-in is not for this app")
+    if not claims.get("email") or claims.get("email_verified") is not True:
+        raise AuthenticationError("Your Google account has no verified email address")
+    return claims
+
+
+@router.post("/google", response_model=TokenPair)
+async def google(payload: GoogleSignIn, session: SessionDep, request: Request) -> TokenPair:
+    """Sign in with Google, creating the account on first use.
+
+    An existing account with the same address is the same person: Google has
+    verified that they hold it, just as our own confirmation email would.
+    """
+    if not (settings.google_client_id and settings.google_client_secret):
+        raise NotFoundError("Google sign-in is not set up on this server")
+    claims = await _google_identity(payload.code, payload.redirect_uri)
+    email = claims["email"].strip().lower()
+
+    user = await session.scalar(select(User).where(func.lower(User.email) == email))
+    created = user is None
+    if user is None:
+        # No password of its own; "Forgot it?" sets one if they ever want it.
+        user = User(
+            email=email,
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            full_name=str(claims["name"])[:200] if claims.get("name") else None,
+            email_verified_at=datetime.now(UTC),
+        )
+        session.add(user)
+        await session.flush()
+    elif not user.is_active:
+        audit.record(session, "auth.login_failed", request=request, email=email, method="google")
+        await session.commit()
+        raise AuthenticationError("This account is disabled")
+    elif user.email_verified_at is None:
+        user.email_verified_at = datetime.now(UTC)
+
+    tokens = await _open_session(session, user, request)
+    audit.record(
+        session,
+        "auth.register" if created else "auth.login",
+        user_id=user.id,
+        target_type="user" if created else None,
+        target_id=user.id if created else None,
+        request=request,
+        method="google",
+    )
     await session.commit()
     return tokens
 

@@ -33,6 +33,7 @@ WINDOW_MS = 60_000
 AUTH_PATHS = (
     "/auth/login",
     "/auth/register",
+    "/auth/google",
     "/auth/password-reset/request",
     "/auth/password-reset/confirm",
     "/auth/verify-email/request",

@@ -21,6 +21,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleSignIn(BaseModel):
+    code: str = Field(min_length=1, max_length=2048)
+    # Must equal the one the browser was sent to Google with.
+    redirect_uri: str = Field(min_length=1, max_length=2048)
+
+
+class AuthProviders(BaseModel):
+    # Public by design: it is in every link to Google's sign-in page.
+    google_client_id: str | None = None
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

@@ -198,6 +198,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Google
+         * @description Sign in with Google, creating the account on first use.
+         *
+         *     An existing account with the same address is the same person: Google has
+         *     verified that they hold it, just as our own confirmation email would.
+         */
+        post: operations["google_api_v1_auth_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -280,6 +303,26 @@ export interface paths {
          * @description Always the same answer, so it cannot reveal whether an account exists.
          */
         post: operations["request_password_reset_api_v1_auth_password_reset_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Providers
+         * @description Which sign-in methods besides a password this server offers.
+         */
+        get: operations["providers_api_v1_auth_providers_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1367,6 +1410,11 @@ export interface components {
             /** User Id */
             user_id: string | null;
         };
+        /** AuthProviders */
+        AuthProviders: {
+            /** Google Client Id */
+            google_client_id?: string | null;
+        };
         /** Body_upload_api_v1_projects__project_id__attachments_post */
         Body_upload_api_v1_projects__project_id__attachments_post: {
             /** File */
@@ -1467,6 +1515,13 @@ export interface components {
              * Format: uuid
              */
             workflow_id: string;
+        };
+        /** GoogleSignIn */
+        GoogleSignIn: {
+            /** Code */
+            code: string;
+            /** Redirect Uri */
+            redirect_uri: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2851,6 +2906,39 @@ export interface operations {
             };
         };
     };
+    google_api_v1_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleSignIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -3008,6 +3096,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    providers_api_v1_auth_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
                 };
             };
         };

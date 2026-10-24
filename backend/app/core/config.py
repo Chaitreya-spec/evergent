@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     # Refuse sign-in until the address is verified. Only meaningful with SMTP.
     require_email_verification: bool = False
+    # "Continue with Google". Both come from an OAuth client of type "Web
+    # application" in Google Cloud; without them the button is not shown.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
 
     # Comma-separated in the environment (or a JSON list).
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
